@@ -19,7 +19,7 @@ The fulfiller can also `release()` the contract if they can't fulfill it for any
 
 Once the `fulfilled()` method is called, the creator can either `complete()` the contract which will `private release_funds(fulfiller)`, or `contest(reason: str)` the contract, in which case the `arbiter: Addr` (El Libertador Staff) will now have permission to `arbitrate(<creator | fulfiller>)` and it will `release_funds(<creator | fulfiller>)` to the person chosen by the arbiter.
 
-After the contract is `closed: bool`, each party can leave a `review(satisfied: bool)` which other people will be able to see the results of on future contracts. Querying these reviews are the backbone of our trust metrics.
+After the contract is `closed: bool`, each party can leave a `review(satisfied: bool, comment: String)` which other people will be able to see the results of on future contracts. Querying these reviews are the backbone of our trust metrics.
 
 ## Trust Metrics
 
@@ -28,11 +28,12 @@ Our `trust_requirements: TrustMetrics` are a parameter passed by the `creator: A
 When a `fulfiller: Addr` tries to `accept()` the contract, we `private check_metrics(fulfiller)` of the `fulfiller` to see if theirs meet the minimum requirements.
 
 ```
-TrustMetrics: {
+struct TrustMetrics: {
  percent_completed: u8,
  total_completed: u32,
  percent_satisfied: u8,
  average_completion_time: u32, //in seconds
+ average_transaction_amount: u32, //in UST
 }
 ```
 
