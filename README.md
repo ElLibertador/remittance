@@ -1,6 +1,11 @@
 # Remittance
 A CosmWasm Smart Contract for people wanting to send Remittances to relatives in Venezuela. Staking UST in escrow to be sent to someone who fulfills it by sending Bolivars to the bank account indicated.
 
+# Flow Chart
+
+![El Libertador Functional Flow Chart](./docs/imgs/ElLib_FlowChart.png)
+
+
 # El Libertador DeFi Remittance Contract
 
 This contract acts as an automated, decentralized broker owned by its creator.
