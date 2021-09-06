@@ -45,6 +45,7 @@ pub fn execute(
         ExecuteMsg::TopUp { id } => execute_top_up(deps, id, Balance::from(info.funds)),
         ExecuteMsg::Refund { id } => execute_refund(deps, env, info, id),
         ExecuteMsg::Receive(msg) => execute_receive(deps, info, msg),
+        ExecuteMsg::CreatorComplete { id } => creator_complete(deps, env, info, id),
     }
 }
 
@@ -149,12 +150,16 @@ pub fn execute_approve(
     info: MessageInfo,
     id: String,
 ) -> Result<Response, ContractError> {
-    // this fails is no escrow there
+    // this fails if no escrow there
     let escrow = ESCROWS.load(deps.storage, &id)?;
 
+    // Check if the address of the message sender is the arbiter
     if info.sender != escrow.arbiter {
         Err(ContractError::Unauthorized {})
-    } else if escrow.is_expired(&env) {
+    } 
+    // Now we know the message sender is the arbiter address
+    // Check if the state of the contract is expired
+    else if escrow.is_expired(&env) {
         Err(ContractError::Expired {})
     } else {
         // we delete the escrow
@@ -165,6 +170,38 @@ pub fn execute_approve(
 
         Ok(Response::new()
             .add_attribute("action", "approve")
+            .add_attribute("id", id)
+            .add_attribute("to", escrow.recipient)
+            .add_submessages(messages))
+    }
+}
+
+pub fn creator_complete(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response, ContractError> {
+    // Load the state of the escrow, and set a variable named escrow equal to it
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+
+    // Check if the message info data about the message sender has an Address that is not
+    // the contract creator, whose Address is stored in the escrow state under the variable source
+    if info.sender != escrow.source {
+        Err(ContractError::Unauthorized {})
+    } 
+    // 
+    else if escrow.is_expired(&env) {
+        Err(ContractError::Expired {})
+    } else {
+        // we delete the escrow
+        ESCROWS.remove(deps.storage, &id);
+
+        // send all tokens out
+        let messages: Vec<SubMsg> = send_tokens(&escrow.recipient, &escrow.balance)?;
+
+        Ok(Response::new()
+            .add_attribute("action", "creator_complete")
             .add_attribute("id", id)
             .add_attribute("to", escrow.recipient)
             .add_submessages(messages))
@@ -599,5 +636,94 @@ mod tests {
                 funds: vec![]
             }))
         );
+    }
+
+    #[test]
+    fn creator_calls_the_creator_complete_function() {
+        // We create a mutable variable named deps and set it equal to the state returned by the function named mock_dependencies
+        let mut deps = mock_dependencies(&[]);
+
+        // instantiate an empty contract
+        let instantiate_msg = InstantiateMsg {};
+        // Our contract is instantiated by ElLib
+        let info = mock_info(&String::from("ElLib"), &[]);
+        let res = instantiate(deps.as_mut(), mock_env(), info, instantiate_msg).unwrap();
+        assert_eq!(0, res.messages.len());
+        // create an escrow
+        let create = CreateMsg {
+            id: "foobar".to_string(),
+            arbiter: String::from("arbitrate"),
+            recipient: String::from("fulfiller"),
+            end_time: None,
+            end_height: Some(123456),
+            cw20_whitelist: None,
+        };
+        // We set the sender to "creator"
+        let sender = String::from("creator");
+        // We give the sender a balance of 100 tokens
+        let balance = coins(100, "tokens");
+        let info = mock_info(&sender, &balance);
+        // We called the Execute Message: Create and give it a copy of our CreateMsg
+        let msg = ExecuteMsg::Create(create.clone());
+        // We call the execute function with our ExecuteMsg::Create and unwrap it's result
+        let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+        // We make sure no error messages are returned
+        assert_eq!(0, res.messages.len());
+        // We check that the tuple with "action" and "create" are returned, signifying execute_create returned Ok
+        assert_eq!(("action", "create"), res.attributes[0]);
+
+        // ensure the details is what we expect
+        let details = query_details(deps.as_ref(), "foobar".to_string()).unwrap();
+        assert_eq!(
+            details,
+            DetailsResponse {
+                id: "foobar".to_string(),
+                arbiter: String::from("arbitrate"),
+                recipient: String::from("fulfiller"),
+                // Check that "creator" is the source
+                source: String::from("creator"),
+                end_height: Some(123456),
+                end_time: None,
+                native_balance: balance.clone(),
+                cw20_balance: vec![],
+                cw20_whitelist: vec![],
+            }
+        );
+
+        /* Here we have the fulfiller try to call the creator complete method, which would be fraud */
+        // We get the contract id
+        let id = create.id.clone();
+        // We make a message coming from the fulfiller
+        let info = mock_info(&create.recipient, &[]);
+        // Get the results of calling execute with the fulfiller as the message signer
+        let err = execute(deps.as_mut(), mock_env(), info, ExecuteMsg::CreatorComplete { id }).unwrap_err();
+        // We check that the response is 
+        assert_eq!(err, ContractError::Unauthorized {});
+
+        /* Here is where we call the CreatorComplete Execution Method */
+        // We get the id of the contract we've created
+        let id = create.id.clone();
+        // We make our message info come from the creator
+        let info = mock_info(&sender, &[]);
+        // We send an ExecuteMsg of type CreatorComplete
+        let res = execute(deps.as_mut(), mock_env(), info, ExecuteMsg::CreatorComplete { id }).unwrap();
+        // We check that the response has a single message
+        assert_eq!(1, res.messages.len());
+        // We check the response attributes match the ones from creator_complete
+        assert_eq!(("action", "creator_complete"), res.attributes[0]);
+        assert_eq!(
+            res.messages[0],
+            SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+                to_address: create.recipient,
+                amount: balance,
+            }))
+        );
+
+        // second attempt fails (not found)
+        let id = create.id.clone();
+        let info = mock_info(&sender, &[]);
+        let err = execute(deps.as_mut(), mock_env(), info, ExecuteMsg::CreatorComplete { id }).unwrap_err();
+        assert!(matches!(err, ContractError::Std(StdError::NotFound { .. })));
+
     }
 }

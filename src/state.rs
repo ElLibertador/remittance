@@ -75,9 +75,11 @@ impl Escrow {
                 return true;
             }
         }
-
+        // We check if the current state's end_time is equal to the current block's end_time
         if let Some(end_time) = self.end_time {
+            // If the current time of the current block is greater than the time converted from end_time
             if env.block.time > Timestamp::from_seconds(end_time) {
+                // We set is_expired equal to true
                 return true;
             }
         }

@@ -8,6 +8,7 @@ use cw20::{Cw20Coin, Cw20ReceiveMsg};
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct InstantiateMsg {}
 
+// List of all possible execution methods
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
@@ -30,6 +31,13 @@ pub enum ExecuteMsg {
     },
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     Receive(Cw20ReceiveMsg),
+    // Creator Complete sends all tokens to the recipient.
+    // Only the creator can do this
+    // Unlike the arbiter, the creator can do this immediately after Fulfiller Complete
+    CreatorComplete {
+        // id is a human-readable name for the escrow from create
+        id: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
