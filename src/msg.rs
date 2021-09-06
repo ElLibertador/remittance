@@ -38,6 +38,11 @@ pub enum ExecuteMsg {
         // id is a human-readable name for the escrow from create
         id: String,
     },
+    // Creator can cancel the contract and have the balance refunded to them if no one has currently accepted the contract
+    CreatorCancel {
+        // id is a human-readable name for the escrow from create
+        id: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

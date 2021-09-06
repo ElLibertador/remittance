@@ -46,6 +46,7 @@ pub fn execute(
         ExecuteMsg::Refund { id } => execute_refund(deps, env, info, id),
         ExecuteMsg::Receive(msg) => execute_receive(deps, info, msg),
         ExecuteMsg::CreatorComplete { id } => creator_complete(deps, env, info, id),
+        ExecuteMsg::CreatorCancel { id } => execute_creator_cancel(deps, env, info, id),
     }
 }
 
@@ -205,6 +206,34 @@ pub fn creator_complete(
             .add_attribute("id", id)
             .add_attribute("to", escrow.recipient)
             .add_submessages(messages))
+    }
+}
+
+pub fn execute_creator_cancel(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response, ContractError> {
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+
+    // We check if the message sender is NOT the creator
+    if info.sender != escrow.source {
+        Err(ContractError::Unauthorized {});
+    } else if escrow.is_expired(&env) {
+        Err(ContractError::Expired {});
+    } else {
+        // We delete the escrow
+        ESCROWS.remove(deps.storage, &id);
+
+        // return the tokens to the creator
+        let messages = send_tokens(&escrow.source, &escrow.balance)?;
+
+        Ok(Response::new()
+        .add_attribute("action", "cancel")
+        .add_attribute("id", id)
+        .add_attribute("to", escrow.source)    
+        .add_submessages(messages))
     }
 }
 
@@ -724,6 +753,5 @@ mod tests {
         let info = mock_info(&sender, &[]);
         let err = execute(deps.as_mut(), mock_env(), info, ExecuteMsg::CreatorComplete { id }).unwrap_err();
         assert!(matches!(err, ContractError::Std(StdError::NotFound { .. })));
-
     }
 }
