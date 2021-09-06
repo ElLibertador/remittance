@@ -219,9 +219,9 @@ pub fn execute_creator_cancel(
 
     // We check if the message sender is NOT the creator
     if info.sender != escrow.source {
-        Err(ContractError::Unauthorized {});
+        Err(ContractError::Unauthorized {})
     } else if escrow.is_expired(&env) {
-        Err(ContractError::Expired {});
+        Err(ContractError::Expired {})
     } else {
         // We delete the escrow
         ESCROWS.remove(deps.storage, &id);
