@@ -18,6 +18,9 @@ pub enum ContractError {
     #[error("Escrow has already been accepted")]
     AlreadyAccepted {},
 
+    #[error("Escrow is currently listed")]
+    AlreadyListed {},
+
     #[error("Only accepts tokens in the cw20_whitelist")]
     NotInWhitelist {},
 

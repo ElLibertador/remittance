@@ -99,6 +99,11 @@ impl Escrow {
         return true;
     }
 
+    pub fn is_accept_expired(&self, env: &Env) {
+        // Check if the time since the fulfiller accepted has exceeded and hour
+        return true;
+    }
+
     pub fn is_fulfilled(&self, env: &Env) {
         // Check if the recipient has claimed fulfillment
         return true;
