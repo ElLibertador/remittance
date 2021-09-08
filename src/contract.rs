@@ -344,38 +344,6 @@ pub fn f_feedback(
 //     Ok(res)
 // }
 
-// pub fn execute_approve(
-//     deps: DepsMut,
-//     env: Env,
-//     info: MessageInfo,
-//     id: String,
-// ) -> Result<Response, ContractError> {
-//     // this fails if no escrow there
-//     let escrow = ESCROWS.load(deps.storage, &id)?;
-
-//     // Check if the address of the message sender is the arbiter
-//     if info.sender != escrow.arbiter {
-//         Err(ContractError::Unauthorized {})
-//     } 
-//     // Now we know the message sender is the arbiter address
-//     // Check if the state of the contract is expired
-//     else if escrow.is_expired(&env) {
-//         Err(ContractError::Expired {})
-//     } else {
-//         // we delete the escrow
-//         ESCROWS.remove(deps.storage, &id);
-
-//         // send all tokens out
-//         let messages: Vec<SubMsg> = send_tokens(&escrow.recipient, &escrow.balance)?;
-
-//         Ok(Response::new()
-//             .add_attribute("action", "approve")
-//             .add_attribute("id", id)
-//             .add_attribute("to", escrow.recipient)
-//             .add_submessages(messages))
-//     }
-// }
-
 fn trust_metrics_failed(
     sender: &Addr,
 ) {

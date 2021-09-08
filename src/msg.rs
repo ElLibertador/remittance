@@ -12,47 +12,23 @@ pub struct InstantiateMsg {}
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Create(CreateMsg),
-    /// Adds all sent native tokens to the contract
-    TopUp {
-        id: String,
-    },
-    /// Approve sends all tokens to the recipient.
-    /// Only the arbiter can do this
-    Approve {
-        /// id is a human-readable name for the escrow from create
-        id: String,
-    },
-    /// Refund returns all remaining tokens to the original sender,
-    /// The arbiter can do this any time, or anyone can do this after a timeout
-    Refund {
-        /// id is a human-readable name for the escrow from create
-        id: String,
-    },
-    /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
-    Receive(Cw20ReceiveMsg),
-    // Creator Complete sends all tokens to the recipient.
-    // Only the creator can do this
-    // Unlike the arbiter, the creator can do this immediately after Fulfiller Complete
-    CreatorComplete {
-        // id is a human-readable name for the escrow from create
-        id: String,
-    },
-    // Creator can cancel the contract and have the balance refunded to them if no one has currently accepted the contrac
-    CreatorCancel {
-        // id is a human-readable name for the escrow from create
-        id: String,
-    },
+    ElArbitrate(ArbitrateMsg),
+    CCreate(CreateMsg),
+    FAccept { id: String, },
+    CCancel { id: String },
+    FUnaccept { id: String },
+    CChange(CreateMsg),
+    FComplete { id: String },
+    CReqArbitration { id: String },
+    CComplete { id: String },
+    CFeedback(FeedbackMsg),
+    FFeedback(FeedbackMsg),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiveMsg {
-    Create(CreateMsg),
-    /// Adds all sent native tokens to the contract
-    TopUp {
-        id: String,
-    },
+    CCreate(CreateMsg),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -77,6 +53,17 @@ pub struct CreateMsg {
     /// that are accepted by the escrow during a top-up. This is required to avoid a DoS attack by topping-up
     /// with an invalid cw20 contract. See https://github.com/CosmWasm/cosmwasm-plus/issues/19
     pub cw20_whitelist: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ArbitrateMsg {
+    pub reciever: Addr,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct FeedbackMsg {
+    pub comment: String,
+    pub satisfied: bool,
 }
 
 impl CreateMsg {
