@@ -47,14 +47,23 @@ impl GenericBalance {
     }
 }
 
+pub struct TrustMetrics {
+    pub percent_completed: u8, // Contracts
+    pub percent_satisfied: u8, // Creator Feedback
+    pub avg_volume: u32, // UST
+    pub avg_completion_speed: u32, // Milliseconds
+    pub total_volume: u32, // UST
+    pub total_completed: u32, // Contracts
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct Escrow {
     /// arbiter can decide to approve or refund the escrow
     pub arbiter: Addr,
-    /// if approved, funds go to the recipient
-    pub recipient: Addr,
-    /// if refunded, funds go to the source
-    pub source: Addr,
+    /// if is_completed, funds go to the fulfiller
+    pub fulfiller: Addr,
+    /// if canceled or arbitrated in favor of them, funds go to the creator
+    pub creator: Addr,
     /// When end height set and block height exceeds this value, the escrow is expired.
     /// Once an escrow is expired, it can be returned to the original funder (via "refund").
     pub end_height: Option<u64>,
@@ -68,6 +77,45 @@ pub struct Escrow {
     pub exchange_rate: u128,
     /// All possible contracts that we accept tokens from
     pub cw20_whitelist: Vec<Addr>,
+    /// Required Trust Metrics
+    pub required_trust_metrics: TrustMetrics,
+    /// States
+    pub is_listed: bool,
+    pub is_canceled: bool,
+    pub is_accepted: bool,
+    pub is_fulfilled: bool,
+    pub is_in_arbitration: bool,
+    pub is_completed: bool,
+    /// State Timers
+    pub time_created: Option<u64>,
+    pub time_accepted: Option<u64>,
+    pub time_fulfilled: Option<u64>,
+    pub time_arbitration_started: Option<u64>,
+}
+
+impl TrustMetrics {
+    pub fn is_higher(&self, fulfiller_trust_metrics: TrustMetrics) {
+        let other = fulfiller_trust_metrics
+        if self.percent_completed > other.percent_completed {
+            false;
+        }
+        if self.percent_satisfied > other.percent_satisfied {
+            false;
+        }
+        if self.avg_volume > other.avg_volume {
+            false;
+        }
+        if self.avg_completion_speed < other.avg_completion_speed {
+            false;
+        }
+        if self.total_volume > other.total_volume {
+            false;
+        }
+        if self.total_completed > other.total_completed {
+            false;
+        }
+        true;
+    }
 }
 
 impl Escrow {
@@ -89,33 +137,18 @@ impl Escrow {
         false
     }
 
-    pub fn is_listed(&self, env: &Env) -> bool {
-        // Check if there is no recipient and it hasn't been canceled or expired
-        return true;
-    }
-
-    pub fn is_accepted(&self, env: &Env) {
-        // Check if there is a recipient
-        return true;
-    }
-
     pub fn is_accept_expired(&self, env: &Env) {
-        // Check if the time since the fulfiller accepted has exceeded and hour
+        // Check if the time since the fulfiller accepted has exceeded an hour
         return true;
     }
 
-    pub fn is_fulfilled(&self, env: &Env) {
-        // Check if the recipient has claimed fulfillment
+    pub fn is_fulfill_expired(&self, env: &Env) {
+        // Check if the time since the fulfiller completed has exceeded an hour
         return true;
     }
 
-    pub fn is_in_arbitration(&self, env: &Env) {
-        // Check if creator called the execute_creator_arbitrate function
-        return true;
-    }
-
-    pub fn is_completed(&self, env: &Env) {
-        // Check if either arbitration has been decided or the creator has called execute_creator_complete
+    pub fn is_arbitration_expired(&self, env: &Env) {
+        // Check if the time since the arbitration started has exceeded two days
         return true;
     }
 

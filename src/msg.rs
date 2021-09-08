@@ -38,8 +38,6 @@ pub struct CreateMsg {
     pub id: String,
     /// arbiter can decide to approve or refund the escrow
     pub arbiter: String,
-    /// if approved, funds go to the recipient
-    pub recipient: String,
     /// When end height set and block height exceeds this value, the escrow is expired.
     /// Once an escrow is expired, it can be returned to the original funder (via "refund").
     pub end_height: Option<u64>,
@@ -53,6 +51,8 @@ pub struct CreateMsg {
     /// that are accepted by the escrow during a top-up. This is required to avoid a DoS attack by topping-up
     /// with an invalid cw20 contract. See https://github.com/CosmWasm/cosmwasm-plus/issues/19
     pub cw20_whitelist: Option<Vec<String>>,
+    /// The required trust metrics for a fulfiller accept function to succeed
+    pub required_trust_metrics: TrustMetrics,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

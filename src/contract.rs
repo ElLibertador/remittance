@@ -154,8 +154,10 @@ pub fn c_cancel(
     } else if !escrow.is_accepted {
         return Err(ContractError::CantUnaccept {});
     } else {
-        // Remove the fulfiller
-        escrow.fulfiller = null;
+        escrow.is_listed = false;
+        escrow.is_canceled = true;
+        // we delete the escrow
+        ESCROWS.remove(deps.storage, &id);
 
         Ok(Response::new()
             .add_attribute("action", "unaccept")
@@ -175,6 +177,9 @@ pub fn f_unaccept(
     } else if !escrow.is_accepted {
         return Err(ContractError::CantUnaccept {});
     } else {
+        // Remove the fulfiller
+        escrow.fulfiller = null;
+
         Ok(Response::new()
             .add_attribute("action", "unaccept")
             .add_attribute("id", id))
