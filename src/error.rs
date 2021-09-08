@@ -18,8 +18,17 @@ pub enum ContractError {
     #[error("Escrow has already been accepted")]
     AlreadyAccepted {},
 
-    #[error("Escrow is currently listed")]
-    AlreadyListed {},
+    #[error("Escrow can not be unaccepted now")]
+    CantUnaccept {},
+
+    #[error("The escrow either hasn't been accepted, or has already been fulfilled")]
+    CantFulfill {},
+
+    #[error("The escrow either hasn't been fulfilled yet, or has already been arbitrated")]
+    NotFulfilled {},
+
+    #[error("The escrow was never completed so a review can't be left")]
+    NotComplete {},
 
     #[error("Only accepts tokens in the cw20_whitelist")]
     NotInWhitelist {},

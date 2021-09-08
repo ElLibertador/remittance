@@ -172,20 +172,129 @@ pub fn f_unaccept(
     let escrow = ESCROWS.load(deps.storage, &id)?;
     if info.sender != escrow.fulfiller {
         return Err(ContractError::Unauthorized {});
-    } else if !escrow.is_listed {
-        return Err(ContractError::AlreadyAccepted {});
+    } else if !escrow.is_accepted {
+        return Err(ContractError::CantUnaccept {});
+    } else {
+        Ok(Response::new()
+            .add_attribute("action", "unaccept")
+            .add_attribute("id", id))
+    }
+}
+
+pub fn c_change(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: CreateMsg,
+) -> Result<Response, ContractError> {
+    // TODO: Implement contract changes
+    return Err(ContractError::Unauthorized)
+}
+
+pub fn f_complete(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response, ContractError> {
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+    if info.sender != escrow.fulfiller {
+        return Err(ContractError::Unauthorized {});
+    } else if !escrow.is_accepted {
+        return Err(ContractError::CantFulfill {});
+    } else {
+        // TODO: Change state like below
+        // escrow.is_fulfilled = true;
+        Ok(Response::new()
+            .add_attribute("action", "fulfill")
+            .add_attribute("id", id))
+    }
+}
+
+pub fn c_request_arbitration(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response, ContractError> {
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+    if info.sender != escrow.creator {
+        return Err(ContractError::Unauthorized {});
+    } else if !escrow.is_fulfilled {
+        return Err(ContractError::NotFulfilled {});
+    } else {
+        // TODO: Change state like below
+        // escrow.is_in_arbitration = true;
+        Ok(Response::new()
+            .add_attribute("action", "request_arbitration")
+            .add_attribute("id", id))
+    }
+}
+
+pub fn c_complete(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response, ContractError> {
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+    if info.sender != escrow.creator {
+        Err(ContractError::Unauthorized {})
+    } 
+    else if !escrow.is_fulfilled(&env) | escrow.is_completed(&env) {
+        Err(ContractError::Expired {})
     } else {
         // we delete the escrow
         ESCROWS.remove(deps.storage, &id);
 
         // send all tokens out
-        let messages = send_tokens(&escrow.creator, &escrow.balance)?;
+        let messages: Vec<SubMsg> = send_tokens(&escrow.fulfiller, &escrow.balance)?;
 
         Ok(Response::new()
-            .add_attribute("action", "cancel")
+            .add_attribute("action", "creator_complete")
             .add_attribute("id", id)
-            .add_attribute("to", escrow.creator)
+            .add_attribute("to", escrow.fulfiller)
             .add_submessages(messages))
+    }
+}
+
+pub fn c_feedback(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: FeedbackMsg,
+) -> Result<Response, ContractError> {
+    // TODO: Implement feedback state for contract
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+    if info.sender != escrow.creator {
+        return Err(ContractError::Unauthorized {});
+    } else if !escrow.is_completed() {
+        return Err(ContractError::NotComplete {});
+    } else {
+        Ok(Response::new()
+            .add_attribute("action", "creator_feedback")
+            .add_attribute("id", id)
+        )
+    }
+}
+
+pub fn f_feedback(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: FeedbackMsg,
+) -> Result<Response, ContractError> {
+    // TODO: Implement feedback state for contract
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+    if info.sender != escrow.fulfiller {
+        return Err(ContractError::Unauthorized {});
+    } else if !escrow.is_completed() {
+        return Err(ContractError::NotComplete {});
+    } else {
+        Ok(Response::new()
+            .add_attribute("action", "fulfiller_feedback")
+            .add_attribute("id", id)
+        )
     }
 }
 
