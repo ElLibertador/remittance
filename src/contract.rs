@@ -136,7 +136,7 @@ pub fn f_accept(
         return Err(ContractError::NotListed {});
     }
     // We have to check if trust metrics of the sender wallet are tolerable
-    else if trustMetricsFailed(&info.sender) {
+    else if trust_metrics_failed(&info.sender) {
         return Err(ContractError::TrustMetricsInsufficient {});
     } 
     else {
@@ -148,11 +148,30 @@ pub fn f_accept(
     }
 }
 
-pub fn trustMetricsFailed(
-    sender: &Addr,
-) {
-    // TODO: Implement trust metrics checking
-    return false
+pub fn c_cancel(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response, ContractError> {
+    let escrow = ESCROWS.load(deps.storage, &id)?;
+    if !escrow.is_expired(&env) && info.sender != escrow.creator {
+        return Err(ContractError::Unauthorized {});
+    } else if !escrow.is_listed {
+        return Err(ContractError::AlreadyAccepted {});
+    } else {
+        // we delete the escrow
+        ESCROWS.remove(deps.storage, &id);
+
+        // send all tokens out
+        let messages = send_tokens(&escrow.creator, &escrow.balance)?;
+
+        Ok(Response::new()
+            .add_attribute("action", "cancel")
+            .add_attribute("id", id)
+            .add_attribute("to", escrow.creator)
+            .add_submessages(messages))
+    }
 }
 
 // pub fn execute_receive(
@@ -319,6 +338,13 @@ pub fn trustMetricsFailed(
 //             .add_submessages(messages))
 //     }
 // }
+
+fn trust_metrics_failed(
+    sender: &Addr,
+) {
+    // TODO: Implement trust metrics checking
+    return false
+}
 
 fn send_tokens(to: &Addr, balance: &GenericBalance) -> StdResult<Vec<SubMsg>> {
     let native_balance = &balance.native;

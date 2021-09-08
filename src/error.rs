@@ -15,6 +15,9 @@ pub enum ContractError {
     #[error("Sender Trust Metrics Not High Enough To Accept This Contract")]
     TrustMetricsInsufficient {},
 
+    #[error("Escrow has already been accepted")]
+    AlreadyAccepted {},
+
     #[error("Only accepts tokens in the cw20_whitelist")]
     NotInWhitelist {},
 
