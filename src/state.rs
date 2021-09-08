@@ -64,6 +64,8 @@ pub struct Escrow {
     pub end_time: Option<u64>,
     /// Balance in Native and Cw20 tokens
     pub balance: GenericBalance,
+    /// Exchange rate desired in Bolivares per UST
+    pub exchange_rate: u128,
     /// All possible contracts that we accept tokens from
     pub cw20_whitelist: Vec<Addr>,
 }
@@ -85,6 +87,31 @@ impl Escrow {
         }
 
         false
+    }
+
+    pub fn is_listed(&self, env: &Env) -> bool {
+        // Check if there is no recipient and it hasn't been canceled or expired
+        return true;
+    }
+
+    pub fn is_accepted(&self, env: &Env) {
+        // Check if there is a recipient
+        return true;
+    }
+
+    pub fn is_fulfilled(&self, env: &Env) {
+        // Check if the recipient has claimed fulfillment
+        return true;
+    }
+
+    pub fn is_in_arbitration(&self, env: &Env) {
+        // Check if creator called the execute_creator_arbitrate function
+        return true;
+    }
+
+    pub fn is_completed(&self, env: &Env) {
+        // Check if either arbitration has been decided or the creator has called execute_creator_complete
+        return true;
     }
 
     pub fn human_whitelist(&self) -> Vec<String> {

@@ -38,38 +38,36 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Create(msg) => {
-            execute_create(deps, msg, Balance::from(info.funds), &info.sender)
-        }
-        ExecuteMsg::Approve { id } => execute_approve(deps, env, info, id),
-        ExecuteMsg::TopUp { id } => execute_top_up(deps, id, Balance::from(info.funds)),
-        ExecuteMsg::Refund { id } => execute_refund(deps, env, info, id),
-        ExecuteMsg::Receive(msg) => execute_receive(deps, info, msg),
-        ExecuteMsg::CreatorComplete { id } => creator_complete(deps, env, info, id),
-        ExecuteMsg::CreatorCancel { id } => execute_creator_cancel(deps, env, info, id),
+        ExecuteMsg::ElArbitrate(msg) => el_arbitrate(deps, env, info, id),
+        ExecuteMsg::CCreate(msg) => c_create(deps, msg, Balance::from(info.funds), &info.sender),
+        ExecuteMsg::FAccept { id } => f_accept(deps, env, info, id),
+        ExecuteMsg::CCancel { id } => c_cancel(deps, env, info, id),
+        ExecuteMsg::FUnaccept { id } => f_unaccept(deps, env, info, id),
+        ExecuteMsg::CChange(msg) => c_change(deps, env, info, msg),
+        ExecuteMsg::FComplete { id } => f_complete(deps, env, info, id),
+        ExecuteMsg::CReqArbitration { id } => c_request_arbitration(deps, env, info, id),
+        ExecuteMsg::CComplete { id } => c_complete(deps, env, info, id),
+        ExecuteMsg::CFeedback(msg) => c_feedback(deps, env, info, msg),
+        ExecuteMsg::FFeedback(msg) => f_feedback(deps, env, info, msg),
+        // ExecuteMsg::Approve { id } => execute_approve(deps, env, info, id),
+        // ExecuteMsg::TopUp { id } => execute_top_up(deps, id, Balance::from(info.funds)),
+        // ExecuteMsg::Refund { id } => execute_refund(deps, env, info, id),
+        // ExecuteMsg::Receive(msg) => execute_receive(deps, info, msg),
+        // ExecuteMsg::CreatorComplete { id } => execute_creator_complete(deps, env, info, id),
+        // ExecuteMsg::CreatorCancel { id } => execute_creator_cancel(deps, env, info, id),
     }
 }
 
-pub fn execute_receive(
+pub fn el_arbitrate(
     deps: DepsMut,
     info: MessageInfo,
-    wrapper: Cw20ReceiveMsg,
+    msg: ArbitrateMsg,
 ) -> Result<Response, ContractError> {
-    let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
-    let balance = Balance::Cw20(Cw20CoinVerified {
-        address: info.sender,
-        amount: wrapper.amount,
-    });
-    let api = deps.api;
-    match msg {
-        ReceiveMsg::Create(msg) => {
-            execute_create(deps, msg, balance, &api.addr_validate(&wrapper.sender)?)
-        }
-        ReceiveMsg::TopUp { id } => execute_top_up(deps, id, balance),
-    }
+    // ArbitrateMsg contains the wallet of whom to send the funds to
+    return Err(ContractError::Unauthorized {});
 }
 
-pub fn execute_create(
+pub fn c_create(
     deps: DepsMut,
     msg: CreateMsg,
     balance: Balance,
@@ -84,7 +82,7 @@ pub fn execute_create(
     let escrow_balance = match balance {
         Balance::Native(balance) => GenericBalance {
             native: balance.0,
-            cw20: vec![],
+            cw20: vec![token],
         },
         Balance::Cw20(token) => {
             // make sure the token sent is on the whitelist by default
@@ -98,13 +96,17 @@ pub fn execute_create(
         }
     };
 
+    // TODO: Make sure this can be at max 7 days from now, since we don't want to keep contracts more than 7 days old
+    let end_time = msg.end_time
+    
     let escrow = Escrow {
         arbiter: deps.api.addr_validate(&msg.arbiter)?,
-        recipient: deps.api.addr_validate(&msg.recipient)?,
-        source: sender.clone(),
+        fulfiller: null,
+        creator: sender.clone(),
         end_height: msg.end_height,
-        end_time: msg.end_time,
+        end_time: end_time,
         balance: escrow_balance,
+        exchange_rate: msg.exchange_rate,
         cw20_whitelist,
     };
 
@@ -118,151 +120,205 @@ pub fn execute_create(
     Ok(res)
 }
 
-pub fn execute_top_up(
-    deps: DepsMut,
-    id: String,
-    balance: Balance,
-) -> Result<Response, ContractError> {
-    if balance.is_empty() {
-        return Err(ContractError::EmptyBalance {});
-    }
-    // this fails is no escrow there
-    let mut escrow = ESCROWS.load(deps.storage, &id)?;
-
-    if let Balance::Cw20(token) = &balance {
-        // ensure the token is on the whitelist
-        if !escrow.cw20_whitelist.iter().any(|t| t == &token.address) {
-            return Err(ContractError::NotInWhitelist {});
-        }
-    };
-
-    escrow.balance.add_tokens(balance);
-
-    // and save
-    ESCROWS.save(deps.storage, &id, &escrow)?;
-
-    let res = Response::new().add_attributes(vec![("action", "top_up"), ("id", id.as_str())]);
-    Ok(res)
-}
-
-pub fn execute_approve(
+pub fn f_accept(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     id: String,
 ) -> Result<Response, ContractError> {
-    // this fails if no escrow there
     let escrow = ESCROWS.load(deps.storage, &id)?;
-
-    // Check if the address of the message sender is the arbiter
-    if info.sender != escrow.arbiter {
-        Err(ContractError::Unauthorized {})
+    if info.sender == escrow.creator {
+        // The contract creator can't accept their own contract
+        return Err(ContractError::Unauthorized {});
     } 
-    // Now we know the message sender is the arbiter address
-    // Check if the state of the contract is expired
-    else if escrow.is_expired(&env) {
-        Err(ContractError::Expired {})
-    } else {
-        // we delete the escrow
-        ESCROWS.remove(deps.storage, &id);
-
-        // send all tokens out
-        let messages: Vec<SubMsg> = send_tokens(&escrow.recipient, &escrow.balance)?;
-
-        Ok(Response::new()
-            .add_attribute("action", "approve")
-            .add_attribute("id", id)
-            .add_attribute("to", escrow.recipient)
-            .add_submessages(messages))
+    // We check if the contract is in a state where it can be accepted
+    else if !escrow.is_listed {
+        return Err(ContractError::NotListed {});
     }
-}
-
-pub fn creator_complete(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    id: String,
-) -> Result<Response, ContractError> {
-    // Load the state of the escrow, and set a variable named escrow equal to it
-    let escrow = ESCROWS.load(deps.storage, &id)?;
-
-    // Check if the message info data about the message sender has an Address that is not
-    // the contract creator, whose Address is stored in the escrow state under the variable source
-    if info.sender != escrow.source {
-        Err(ContractError::Unauthorized {})
+    // We have to check if trust metrics of the sender wallet are tolerable
+    else if trustMetricsFailed(&info.sender) {
+        return Err(ContractError::TrustMetricsInsufficient {});
     } 
-    // 
-    else if escrow.is_expired(&env) {
-        Err(ContractError::Expired {})
-    } else {
-        // we delete the escrow
-        ESCROWS.remove(deps.storage, &id);
-
-        // send all tokens out
-        let messages: Vec<SubMsg> = send_tokens(&escrow.recipient, &escrow.balance)?;
-
-        Ok(Response::new()
-            .add_attribute("action", "creator_complete")
-            .add_attribute("id", id)
-            .add_attribute("to", escrow.recipient)
-            .add_submessages(messages))
+    else {
+        // We set the message sender as the contract fulfiller
+        escrow.fulfiller = info.sender;
+        // TODO: Set escrow.is_accepted to true
+        let res = Response::new().add_attributes(vec![("action", "accept"), ("id", id.as_str())]);
+        return Ok(res)
     }
 }
 
-pub fn execute_creator_cancel(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    id: String,
-) -> Result<Response, ContractError> {
-    let escrow = ESCROWS.load(deps.storage, &id)?;
-
-    // We check if the message sender is NOT the creator
-    if info.sender != escrow.source {
-        Err(ContractError::Unauthorized {})
-    } else if escrow.is_expired(&env) {
-        Err(ContractError::Expired {})
-    } else {
-        // We delete the escrow
-        ESCROWS.remove(deps.storage, &id);
-
-        // return the tokens to the creator
-        let messages = send_tokens(&escrow.source, &escrow.balance)?;
-
-        Ok(Response::new()
-        .add_attribute("action", "cancel")
-        .add_attribute("id", id)
-        .add_attribute("to", escrow.source)    
-        .add_submessages(messages))
-    }
+pub fn trustMetricsFailed(
+    sender: &Addr,
+) {
+    // TODO: Implement trust metrics checking
+    return false
 }
 
-pub fn execute_refund(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    id: String,
-) -> Result<Response, ContractError> {
-    // this fails is no escrow there
-    let escrow = ESCROWS.load(deps.storage, &id)?;
+// pub fn execute_receive(
+//     deps: DepsMut,
+//     info: MessageInfo,
+//     wrapper: Cw20ReceiveMsg,
+// ) -> Result<Response, ContractError> {
+//     let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
+//     let balance = Balance::Cw20(Cw20CoinVerified {
+//         address: info.sender,
+//         amount: wrapper.amount,
+//     });
+//     let api = deps.api;
+//     match msg {
+//         ReceiveMsg::Create(msg) => {
+//             execute_create(deps, msg, balance, &api.addr_validate(&wrapper.sender)?)
+//         }
+//         ReceiveMsg::TopUp { id } => execute_top_up(deps, id, balance),
+//     }
+// }
 
-    // the arbiter can send anytime OR anyone can send after expiration
-    if !escrow.is_expired(&env) && info.sender != escrow.arbiter {
-        Err(ContractError::Unauthorized {})
-    } else {
-        // we delete the escrow
-        ESCROWS.remove(deps.storage, &id);
+// pub fn execute_top_up(
+//     deps: DepsMut,
+//     id: String,
+//     balance: Balance,
+// ) -> Result<Response, ContractError> {
+//     if balance.is_empty() {
+//         return Err(ContractError::EmptyBalance {});
+//     }
+//     // this fails is no escrow there
+//     let mut escrow = ESCROWS.load(deps.storage, &id)?;
 
-        // send all tokens out
-        let messages = send_tokens(&escrow.source, &escrow.balance)?;
+//     if let Balance::Cw20(token) = &balance {
+//         // ensure the token is on the whitelist
+//         if !escrow.cw20_whitelist.iter().any(|t| t == &token.address) {
+//             return Err(ContractError::NotInWhitelist {});
+//         }
+//     };
 
-        Ok(Response::new()
-            .add_attribute("action", "refund")
-            .add_attribute("id", id)
-            .add_attribute("to", escrow.source)
-            .add_submessages(messages))
-    }
-}
+//     escrow.balance.add_tokens(balance);
+
+//     // and save
+//     ESCROWS.save(deps.storage, &id, &escrow)?;
+
+//     let res = Response::new().add_attributes(vec![("action", "top_up"), ("id", id.as_str())]);
+//     Ok(res)
+// }
+
+// pub fn execute_approve(
+//     deps: DepsMut,
+//     env: Env,
+//     info: MessageInfo,
+//     id: String,
+// ) -> Result<Response, ContractError> {
+//     // this fails if no escrow there
+//     let escrow = ESCROWS.load(deps.storage, &id)?;
+
+//     // Check if the address of the message sender is the arbiter
+//     if info.sender != escrow.arbiter {
+//         Err(ContractError::Unauthorized {})
+//     } 
+//     // Now we know the message sender is the arbiter address
+//     // Check if the state of the contract is expired
+//     else if escrow.is_expired(&env) {
+//         Err(ContractError::Expired {})
+//     } else {
+//         // we delete the escrow
+//         ESCROWS.remove(deps.storage, &id);
+
+//         // send all tokens out
+//         let messages: Vec<SubMsg> = send_tokens(&escrow.recipient, &escrow.balance)?;
+
+//         Ok(Response::new()
+//             .add_attribute("action", "approve")
+//             .add_attribute("id", id)
+//             .add_attribute("to", escrow.recipient)
+//             .add_submessages(messages))
+//     }
+// }
+
+// pub fn execute_creator_complete(
+//     deps: DepsMut,
+//     env: Env,
+//     info: MessageInfo,
+//     id: String,
+// ) -> Result<Response, ContractError> {
+//     // Load the state of the escrow, and set a variable named escrow equal to it
+//     let escrow = ESCROWS.load(deps.storage, &id)?;
+
+//     // Check if the message info data about the message sender has an Address that is not
+//     // the contract creator, whose Address is stored in the escrow state under the variable source
+//     if info.sender != escrow.source {
+//         Err(ContractError::Unauthorized {})
+//     } 
+//     // 
+//     else if escrow.is_expired(&env) {
+//         Err(ContractError::Expired {})
+//     } else {
+//         // we delete the escrow
+//         ESCROWS.remove(deps.storage, &id);
+
+//         // send all tokens out
+//         let messages: Vec<SubMsg> = send_tokens(&escrow.recipient, &escrow.balance)?;
+
+//         Ok(Response::new()
+//             .add_attribute("action", "creator_complete")
+//             .add_attribute("id", id)
+//             .add_attribute("to", escrow.recipient)
+//             .add_submessages(messages))
+//     }
+// }
+
+// pub fn execute_creator_cancel(
+//     deps: DepsMut,
+//     env: Env,
+//     info: MessageInfo,
+//     id: String,
+// ) -> Result<Response, ContractError> {
+//     let escrow = ESCROWS.load(deps.storage, &id)?;
+
+//     // We check if the message sender is NOT the creator
+//     if info.sender != escrow.source {
+//         Err(ContractError::Unauthorized {})
+//     } else if escrow.is_expired(&env) {
+//         Err(ContractError::Expired {})
+//     } else {
+//         // We delete the escrow
+//         ESCROWS.remove(deps.storage, &id);
+
+//         // return the tokens to the creator
+//         let messages = send_tokens(&escrow.source, &escrow.balance)?;
+
+//         Ok(Response::new()
+//         .add_attribute("action", "cancel")
+//         .add_attribute("id", id)
+//         .add_attribute("to", escrow.source)    
+//         .add_submessages(messages))
+//     }
+// }
+
+// pub fn execute_refund(
+//     deps: DepsMut,
+//     env: Env,
+//     info: MessageInfo,
+//     id: String,
+// ) -> Result<Response, ContractError> {
+//     // this fails is no escrow there
+//     let escrow = ESCROWS.load(deps.storage, &id)?;
+
+//     // the arbiter can send anytime OR anyone can send after expiration
+//     if !escrow.is_expired(&env) && info.sender != escrow.arbiter {
+//         Err(ContractError::Unauthorized {})
+//     } else {
+//         // we delete the escrow
+//         ESCROWS.remove(deps.storage, &id);
+
+//         // send all tokens out
+//         let messages = send_tokens(&escrow.source, &escrow.balance)?;
+
+//         Ok(Response::new()
+//             .add_attribute("action", "refund")
+//             .add_attribute("id", id)
+//             .add_attribute("to", escrow.source)
+//             .add_submessages(messages))
+//     }
+// }
 
 fn send_tokens(to: &Addr, balance: &GenericBalance) -> StdResult<Vec<SubMsg>> {
     let native_balance = &balance.native;

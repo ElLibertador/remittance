@@ -38,7 +38,7 @@ pub enum ExecuteMsg {
         // id is a human-readable name for the escrow from create
         id: String,
     },
-    // Creator can cancel the contract and have the balance refunded to them if no one has currently accepted the contract
+    // Creator can cancel the contract and have the balance refunded to them if no one has currently accepted the contrac
     CreatorCancel {
         // id is a human-readable name for the escrow from create
         id: String,
@@ -71,6 +71,8 @@ pub struct CreateMsg {
     /// block time exceeds this value, the escrow is expired.
     /// Once an escrow is expired, it can be returned to the original funder (via "refund").
     pub end_time: Option<u64>,
+    /// Exchange rate desired, in Bolivares per UST
+    pub exchange_rate: u128,
     /// Besides any possible tokens sent with the CreateMsg, this is a list of all cw20 token addresses
     /// that are accepted by the escrow during a top-up. This is required to avoid a DoS attack by topping-up
     /// with an invalid cw20 contract. See https://github.com/CosmWasm/cosmwasm-plus/issues/19

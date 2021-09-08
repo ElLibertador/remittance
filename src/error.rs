@@ -9,6 +9,12 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
+    #[error("Contract is not listed as available for acceptance")]
+    NotListed {},
+
+    #[error("Sender Trust Metrics Not High Enough To Accept This Contract")]
+    TrustMetricsInsufficient {},
+
     #[error("Only accepts tokens in the cw20_whitelist")]
     NotInWhitelist {},
 
