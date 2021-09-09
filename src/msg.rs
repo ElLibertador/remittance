@@ -5,6 +5,8 @@ use cosmwasm_std::{Addr, Api, Coin, StdResult};
 
 use cw20::{Cw20Coin, Cw20ReceiveMsg};
 
+use crate::state::{TrustMetrics};
+
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct InstantiateMsg {}
 
@@ -12,7 +14,7 @@ pub struct InstantiateMsg {}
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    ElArbitrate(ArbitrateMsg),
+    ElArbitrate(String, ArbitrateMsg),
     CCreate(CreateMsg),
     FAccept { id: String, },
     CCancel { id: String },
@@ -21,8 +23,8 @@ pub enum ExecuteMsg {
     FComplete { id: String },
     CReqArbitration { id: String },
     CComplete { id: String },
-    CFeedback(FeedbackMsg),
-    FFeedback(FeedbackMsg),
+    CFeedback(String, FeedbackMsg),
+    FFeedback(String, FeedbackMsg),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -106,9 +108,9 @@ pub struct DetailsResponse {
     /// arbiter can decide to approve or refund the escrow
     pub arbiter: String,
     /// if approved, funds go to the recipient
-    pub recipient: String,
+    pub fulfiller: String,
     /// if refunded, funds go to the source
-    pub source: String,
+    pub creator: String,
     /// When end height set and block height exceeds this value, the escrow is expired.
     /// Once an escrow is expired, it can be returned to the original funder (via "refund").
     pub end_height: Option<u64>,

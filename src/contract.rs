@@ -10,9 +10,9 @@ use cw20::{Balance, Cw20Coin, Cw20CoinVerified, Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 use crate::error::ContractError;
 use crate::msg::{
-    CreateMsg, DetailsResponse, ExecuteMsg, InstantiateMsg, ListResponse, QueryMsg, ReceiveMsg,
+    CreateMsg, DetailsResponse, ExecuteMsg, InstantiateMsg, ListResponse, QueryMsg, ReceiveMsg, FeedbackMsg, ArbitrateMsg
 };
-use crate::state::{all_escrow_ids, Escrow, GenericBalance, ESCROWS};
+use crate::state::{all_escrow_ids, Escrow, GenericBalance, ESCROWS, TrustMetrics};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:cw20-escrow";
@@ -38,7 +38,7 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::ElArbitrate(msg) => el_arbitrate(deps, env, info, id),
+        ExecuteMsg::ElArbitrate(id, msg) => el_arbitrate(deps, env, info, msg, id),
         ExecuteMsg::CCreate(msg) => c_create(deps, msg, Balance::from(info.funds), &info.sender),
         ExecuteMsg::FAccept { id } => f_accept(deps, env, info, id),
         ExecuteMsg::CCancel { id } => c_cancel(deps, env, info, id),
@@ -47,15 +47,17 @@ pub fn execute(
         ExecuteMsg::FComplete { id } => f_complete(deps, env, info, id),
         ExecuteMsg::CReqArbitration { id } => c_request_arbitration(deps, env, info, id),
         ExecuteMsg::CComplete { id } => c_complete(deps, env, info, id),
-        ExecuteMsg::CFeedback(msg) => c_feedback(deps, env, info, msg),
-        ExecuteMsg::FFeedback(msg) => f_feedback(deps, env, info, msg),
+        ExecuteMsg::CFeedback(id, msg) => c_feedback(deps, env, info, msg, id),
+        ExecuteMsg::FFeedback(id, msg) => f_feedback(deps, env, info, msg, id),
     }
 }
 
 pub fn el_arbitrate(
     deps: DepsMut,
+    env: Env,
     info: MessageInfo,
     msg: ArbitrateMsg,
+    id: String,
 ) -> Result<Response, ContractError> {
     // ArbitrateMsg contains the wallet of whom to send the funds to
     return Err(ContractError::Unauthorized {});
@@ -76,7 +78,7 @@ pub fn c_create(
     let escrow_balance = match balance {
         Balance::Native(balance) => GenericBalance {
             native: balance.0,
-            cw20: vec![token],
+            cw20: vec![],
         },
         Balance::Cw20(token) => {
             // make sure the token sent is on the whitelist by default
@@ -91,17 +93,28 @@ pub fn c_create(
     };
 
     // TODO: Make sure this can be at max 7 days from now, since we don't want to keep contracts more than 7 days old
-    let end_time = msg.end_time
+    let end_time = msg.end_time;
     
     let escrow = Escrow {
         arbiter: deps.api.addr_validate(&msg.arbiter)?,
-        fulfiller: null,
+        fulfiller: sender.clone(),
         creator: sender.clone(),
         end_height: msg.end_height,
         end_time: end_time,
         balance: escrow_balance,
         exchange_rate: msg.exchange_rate,
         cw20_whitelist,
+        required_trust_metrics: msg.required_trust_metrics,
+        is_listed: true,
+        is_canceled: false,
+        is_accepted: false,
+        is_fulfilled: false,
+        is_in_arbitration: false,
+        is_completed: false,
+        time_created: Some(0),
+        time_accepted: Some(0),
+        time_fulfilled: Some(0),
+        time_arbitration_started: Some(0),
     };
 
     // try to store it, fail if the id was already in use
@@ -120,7 +133,7 @@ pub fn f_accept(
     info: MessageInfo,
     id: String,
 ) -> Result<Response, ContractError> {
-    let escrow = ESCROWS.load(deps.storage, &id)?;
+    let mut escrow = ESCROWS.load(deps.storage, &id)?;
     if info.sender == escrow.creator {
         // The contract creator can't accept their own contract
         return Err(ContractError::Unauthorized {});
@@ -130,7 +143,7 @@ pub fn f_accept(
         return Err(ContractError::NotListed {});
     }
     // We have to check if trust metrics of the sender wallet are tolerable
-    else if trust_metrics_failed(&info.sender) {
+    else if escrow.required_trust_metrics.is_higher(get_trust_metrics(&info.sender)) {
         return Err(ContractError::TrustMetricsInsufficient {});
     } 
     else {
@@ -148,7 +161,7 @@ pub fn c_cancel(
     info: MessageInfo,
     id: String,
 ) -> Result<Response, ContractError> {
-    let escrow = ESCROWS.load(deps.storage, &id)?;
+    let mut escrow = ESCROWS.load(deps.storage, &id)?;
     if !escrow.is_accept_expired(&env) && info.sender != escrow.creator {
         return Err(ContractError::Unauthorized {});
     } else if !escrow.is_accepted {
@@ -171,14 +184,14 @@ pub fn f_unaccept(
     info: MessageInfo,
     id: String,
 ) -> Result<Response, ContractError> {
-    let escrow = ESCROWS.load(deps.storage, &id)?;
+    let mut escrow = ESCROWS.load(deps.storage, &id)?;
     if info.sender != escrow.fulfiller {
         return Err(ContractError::Unauthorized {});
     } else if !escrow.is_accepted {
         return Err(ContractError::CantUnaccept {});
     } else {
         // Remove the fulfiller
-        escrow.fulfiller = null;
+        escrow.fulfiller = info.sender;
 
         Ok(Response::new()
             .add_attribute("action", "unaccept")
@@ -193,7 +206,7 @@ pub fn c_change(
     msg: CreateMsg,
 ) -> Result<Response, ContractError> {
     // TODO: Implement contract changes
-    return Err(ContractError::Unauthorized)
+    return Err(ContractError::Unauthorized {})
 }
 
 pub fn f_complete(
@@ -246,7 +259,7 @@ pub fn c_complete(
     if info.sender != escrow.creator {
         Err(ContractError::Unauthorized {})
     } 
-    else if !escrow.is_fulfilled(&env) | escrow.is_completed(&env) {
+    else if !escrow.is_fulfilled | escrow.is_completed {
         Err(ContractError::Expired {})
     } else {
         // we delete the escrow
@@ -268,12 +281,13 @@ pub fn c_feedback(
     env: Env,
     info: MessageInfo,
     msg: FeedbackMsg,
+    id: String,
 ) -> Result<Response, ContractError> {
     // TODO: Implement feedback state for contract
     let escrow = ESCROWS.load(deps.storage, &id)?;
     if info.sender != escrow.creator {
         return Err(ContractError::Unauthorized {});
-    } else if !escrow.is_completed() {
+    } else if !escrow.is_completed {
         return Err(ContractError::NotComplete {});
     } else {
         Ok(Response::new()
@@ -288,12 +302,13 @@ pub fn f_feedback(
     env: Env,
     info: MessageInfo,
     msg: FeedbackMsg,
+    id: String,
 ) -> Result<Response, ContractError> {
     // TODO: Implement feedback state for contract
     let escrow = ESCROWS.load(deps.storage, &id)?;
     if info.sender != escrow.fulfiller {
         return Err(ContractError::Unauthorized {});
-    } else if !escrow.is_completed() {
+    } else if !escrow.is_completed {
         return Err(ContractError::NotComplete {});
     } else {
         Ok(Response::new()
@@ -303,57 +318,15 @@ pub fn f_feedback(
     }
 }
 
-// pub fn execute_receive(
-//     deps: DepsMut,
-//     info: MessageInfo,
-//     wrapper: Cw20ReceiveMsg,
-// ) -> Result<Response, ContractError> {
-//     let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
-//     let balance = Balance::Cw20(Cw20CoinVerified {
-//         address: info.sender,
-//         amount: wrapper.amount,
-//     });
-//     let api = deps.api;
-//     match msg {
-//         ReceiveMsg::Create(msg) => {
-//             execute_create(deps, msg, balance, &api.addr_validate(&wrapper.sender)?)
-//         }
-//         ReceiveMsg::TopUp { id } => execute_top_up(deps, id, balance),
-//     }
-// }
-
-// pub fn execute_top_up(
-//     deps: DepsMut,
-//     id: String,
-//     balance: Balance,
-// ) -> Result<Response, ContractError> {
-//     if balance.is_empty() {
-//         return Err(ContractError::EmptyBalance {});
-//     }
-//     // this fails is no escrow there
-//     let mut escrow = ESCROWS.load(deps.storage, &id)?;
-
-//     if let Balance::Cw20(token) = &balance {
-//         // ensure the token is on the whitelist
-//         if !escrow.cw20_whitelist.iter().any(|t| t == &token.address) {
-//             return Err(ContractError::NotInWhitelist {});
-//         }
-//     };
-
-//     escrow.balance.add_tokens(balance);
-
-//     // and save
-//     ESCROWS.save(deps.storage, &id, &escrow)?;
-
-//     let res = Response::new().add_attributes(vec![("action", "top_up"), ("id", id.as_str())]);
-//     Ok(res)
-// }
-
-fn trust_metrics_failed(
-    sender: &Addr,
-) {
-    // TODO: Implement trust metrics checking
-    return false
+fn get_trust_metrics(sender: &Addr) -> TrustMetrics {
+    return TrustMetrics {
+        percent_completed: 95,
+        percent_satisfied: 90,
+        avg_volume: 100,
+        avg_completion_speed: 600000,
+        total_volume: 2000,
+        total_completed: 20,
+    }
 }
 
 fn send_tokens(to: &Addr, balance: &GenericBalance) -> StdResult<Vec<SubMsg>> {
@@ -418,8 +391,8 @@ fn query_details(deps: Deps, id: String) -> StdResult<DetailsResponse> {
     let details = DetailsResponse {
         id,
         arbiter: escrow.arbiter.into(),
-        recipient: escrow.recipient.into(),
-        source: escrow.source.into(),
+        fulfiller: escrow.fulfiller.into(),
+        creator: escrow.creator.into(),
         end_height: escrow.end_height,
         end_time: escrow.end_time,
         native_balance,

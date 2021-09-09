@@ -47,6 +47,7 @@ impl GenericBalance {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
 pub struct TrustMetrics {
     pub percent_completed: u8, // Contracts
     pub percent_satisfied: u8, // Creator Feedback
@@ -55,6 +56,32 @@ pub struct TrustMetrics {
     pub total_volume: u32, // UST
     pub total_completed: u32, // Contracts
 }
+
+impl TrustMetrics {
+    pub fn is_higher(&self, fulfiller_trust_metrics: TrustMetrics) -> bool {
+        let other = fulfiller_trust_metrics;
+        if self.percent_completed > other.percent_completed {
+            return false
+        }
+        if self.percent_satisfied > other.percent_satisfied {
+            return false
+        }
+        if self.avg_volume > other.avg_volume {
+            return false
+        }
+        if self.avg_completion_speed < other.avg_completion_speed {
+            return false
+        }
+        if self.total_volume > other.total_volume {
+            return false
+        }
+        if self.total_completed > other.total_completed {
+            return false
+        }
+        return true
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct Escrow {
@@ -93,31 +120,6 @@ pub struct Escrow {
     pub time_arbitration_started: Option<u64>,
 }
 
-impl TrustMetrics {
-    pub fn is_higher(&self, fulfiller_trust_metrics: TrustMetrics) {
-        let other = fulfiller_trust_metrics
-        if self.percent_completed > other.percent_completed {
-            false;
-        }
-        if self.percent_satisfied > other.percent_satisfied {
-            false;
-        }
-        if self.avg_volume > other.avg_volume {
-            false;
-        }
-        if self.avg_completion_speed < other.avg_completion_speed {
-            false;
-        }
-        if self.total_volume > other.total_volume {
-            false;
-        }
-        if self.total_completed > other.total_completed {
-            false;
-        }
-        true;
-    }
-}
-
 impl Escrow {
     pub fn is_expired(&self, env: &Env) -> bool {
         if let Some(end_height) = self.end_height {
@@ -137,17 +139,17 @@ impl Escrow {
         false
     }
 
-    pub fn is_accept_expired(&self, env: &Env) {
+    pub fn is_accept_expired(&self, env: &Env) -> bool {
         // Check if the time since the fulfiller accepted has exceeded an hour
         return true;
     }
 
-    pub fn is_fulfill_expired(&self, env: &Env) {
+    pub fn is_fulfill_expired(&self, env: &Env) -> bool {
         // Check if the time since the fulfiller completed has exceeded an hour
         return true;
     }
 
-    pub fn is_arbitration_expired(&self, env: &Env) {
+    pub fn is_arbitration_expired(&self, env: &Env) -> bool {
         // Check if the time since the arbitration started has exceeded two days
         return true;
     }
